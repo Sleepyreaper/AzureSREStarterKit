@@ -1,0 +1,110 @@
+name: Issue Triage → Draft PR
+
+# Fires when an issue is opened (typically by Azure SRE Agent, but
+# any human-filed issue works too). Runs the Foundry triage agent,
+# then opens a draft PR with the proposed fix for human review.
+
+on:
+  issues:
+    types: [opened, labeled]
+
+# Serialize per-issue: when the SRE Agent files an issue + adds 3 labels,
+# the workflow would otherwise fire 4× simultaneously and race on git push.
+concurrency:
+  group: triage-issue-${{ github.event.issue.number }}
+  cancel-in-progress: true
+
+permissions:
+  contents: write
+  issues: write
+  pull-requests: write
+  id-token: write   # required for Azure Workload Identity Federation
+
+jobs:
+  triage:
+    runs-on: ubuntu-latest
+    # Only trigger on issues labeled "sre-finding" (set automatically by
+    # the SRE Agent webhook, or manually for testing).
+    if: contains(github.event.issue.labels.*.name, 'sre-finding') || github.event.action == 'opened'
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.13'
+
+      - name: Install agent deps
+        run: pip install -r agents/triage/requirements.txt
+
+      - name: Azure login (Workload Identity Federation)
+        uses: azure/login@v2
+        with:
+          client-id: ${{ secrets.AZURE_CLIENT_ID }}
+          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+
+      - name: Persist issue payload to file
+        run: |
+          mkdir -p out
+          cat > out/issue.json <<'EOF'
+          ${{ toJSON(github.event.issue) }}
+          EOF
+
+      - name: Run triage agent
+        env:
+          AZURE_OPENAI_ENDPOINT: ${{ secrets.AZURE_OPENAI_ENDPOINT }}
+          AZURE_SUBSCRIPTION_ID: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+          TRIAGE_MODEL: o4-mini
+          APPLICATIONINSIGHTS_CONNECTION_STRING: ${{ secrets.APPLICATIONINSIGHTS_CONNECTION_STRING }}
+        run: |
+          STATE_QUERY=$(echo "${{ github.event.issue.body }}" | grep -oP '(?<=ARG-QUERY:\s).+' | head -1 || true)
+          python -m agents.triage \
+            --issue-file out/issue.json \
+            --out-dir out \
+            --state-query "${STATE_QUERY:-}"
+
+      - name: Open draft PR
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          BRANCH="triage/issue-${{ github.event.issue.number }}"
+          git config user.name "sre-triage[bot]"
+          git config user.email "triage@example.com"
+          git checkout -b "$BRANCH"
+
+          # Copy any generated patch into the repo at its proposed path
+          PATCH_FILE=$(jq -r '.fix.filename // empty' out/proposal.json)
+          if [ -n "$PATCH_FILE" ]; then
+            mkdir -p "$(dirname "$PATCH_FILE")"
+            cp "out/$(basename "$PATCH_FILE")" "$PATCH_FILE" 2>/dev/null || true
+            git add "$PATCH_FILE" || true
+          fi
+          # out/ is gitignored; force-add the audit artifact
+          git add -f out/proposal.json
+          git commit -m "Triage agent proposal for #${{ github.event.issue.number }}" || echo "Nothing to commit"
+
+          git push -u origin "$BRANCH" --force-with-lease
+
+          gh pr create \
+            --draft \
+            --title "[Triage] ${{ github.event.issue.title }}" \
+            --body-file out/pr-body.md \
+            --base main \
+            --head "$BRANCH" \
+            --label "agent-proposal,needs-human-review" || {
+              echo "PR may already exist for this branch; updating..."
+              gh pr edit "$BRANCH" --body-file out/pr-body.md || true
+            }
+
+      - name: Link PR back to issue
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          PR_URL=$(gh pr list --head "triage/issue-${{ github.event.issue.number }}" --json url --jq '.[0].url' || echo "")
+          if [ -n "$PR_URL" ]; then
+            gh issue comment ${{ github.event.issue.number }} \
+              --body "🤖 Triage agent has proposed a fix in $PR_URL — please review and approve/reject."
+          fi

@@ -1,0 +1,4 @@
+openai==1.68.2
+azure-identity==1.17.0
+azure-mgmt-resourcegraph==8.0.0
+azure-monitor-opentelemetry==1.6.4
