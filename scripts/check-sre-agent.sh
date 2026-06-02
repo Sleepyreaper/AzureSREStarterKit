@@ -1,26 +1,32 @@
 #!/usr/bin/env bash
-# Verifies the existing Azure SRE Agent ({YOUR_SRE_AGENT_NAME}) and prints
-# what's needed to complete the GitHub integration.
+# =============================================================================
+# check-sre-agent.sh — verify an SRE Agent is configured for the starter kit.
 #
-# The agent itself was created out-of-band (Azure portal or
-# az resource create). This script:
-#   1. Confirms {YOUR_SRE_AGENT_NAME} exists and is running
-#   2. Shows current config (model, scope, action mode, GitHub link)
-#   3. Lists what still needs to be configured for the closed-loop demo
+# Prints:
+#   * whether the agent exists and what state it's in
+#   * its endpoint, model, scope, action mode, GitHub linkage
+#   * the UAMI's role assignments on the RG it monitors
+#   * which subagents are installed
 #
-# Re-run safe. Read-only by default; pass --grant-rbac to add roles to its identity.
-set -euo pipefail
+# Usage:
+#   RG=rg-sre AGENT_NAME=mysre bash scripts/check-sre-agent.sh
+#   RG=rg-sre AGENT_NAME=mysre GITHUB_REPO=owner/repo bash scripts/check-sre-agent.sh
+# =============================================================================
+set -uo pipefail
 
-RG="${1:-{YOUR_RG}}"
-AGENT_NAME="${2:-{YOUR_SRE_AGENT_NAME}}"
-REPO="${3:-{GITHUB_OWNER}/{GITHUB_REPO}}"
-
+RG="${RG:-${1:-}}"
+AGENT_NAME="${AGENT_NAME:-${2:-}}"
+GITHUB_REPO="${GITHUB_REPO:-${3:-}}"
 API_VERSION="2025-05-01-preview"
 
+if [[ -z "$RG" || -z "$AGENT_NAME" ]]; then
+  echo "Usage: RG=rg AGENT_NAME=agent bash scripts/check-sre-agent.sh" >&2
+  exit 2
+fi
+
 if ! az resource show --resource-type "Microsoft.App/agents" --name "$AGENT_NAME" -g "$RG" --api-version "$API_VERSION" >/dev/null 2>&1; then
-  echo "✗ SRE Agent '$AGENT_NAME' not found in resource group '$RG'."
-  echo "  Create it via the Azure portal (search 'SRE Agents') or:"
-  echo "    https://portal.azure.com/#create/Microsoft.App%2Fagents"
+  echo "✗ SRE Agent '$AGENT_NAME' not found in resource group '$RG'." >&2
+  echo "  Create it via the portal:  https://sre.azure.com" >&2
   exit 1
 fi
 
@@ -41,56 +47,30 @@ az resource show --resource-type "Microsoft.App/agents" --name "$AGENT_NAME" -g 
 
 echo
 echo "→ UAMI permissions on $RG:"
-UAMI_PRINCIPAL=$(az resource show --resource-type "Microsoft.App/agents" --name "$AGENT_NAME" -g "$RG" --api-version "$API_VERSION" --query "properties.knowledgeGraphConfiguration.identity" -o tsv | xargs -I {} az resource show --ids {} --query "properties.principalId" -o tsv)
-RG_LOWER=$(echo "$RG" | tr '[:upper:]' '[:lower:]')
-RG_UPPER=$(echo "$RG" | tr '[:lower:]' '[:upper:]')
-# JMESPath has no case-insensitive contains; just OR both cases.
-az role assignment list --assignee "$UAMI_PRINCIPAL" --all -o tsv \
-  --query "[?contains(scope, '$RG') || contains(scope, '$RG_LOWER') || contains(scope, '$RG_UPPER')].roleDefinitionName" \
-  | sort -u | sed 's/^/   - /'
-
-echo
-echo "─── Bridge to GitHub ─────────────────────────────────────"
-GH_CONFIG=$(az resource show --resource-type "Microsoft.App/agents" --name "$AGENT_NAME" -g "$RG" --api-version "$API_VERSION" --query "properties.gitHubConfiguration" -o json)
-# Treat null, {}, or {"patTokenOverride": ""} as "not configured"
-GH_MEANINGFUL=$(echo "$GH_CONFIG" | jq 'if . == null then false elif (keys | length) == 0 then false elif . == {"patTokenOverride": ""} then false else true end' 2>/dev/null || echo "false")
-if [ "$GH_MEANINGFUL" != "true" ]; then
-  cat <<EOF
-ℹ️  GitHub integration is NOT configured on the SRE Agent.
-
-Options to bridge SRE findings → GitHub Issues on $REPO:
-
-  A) Configure GitHub directly in the SRE Agent portal (recommended)
-     1. Open the agent in Azure portal:
-          https://portal.azure.com/#@/resource/subscriptions/$(az account show --query id -o tsv)/resourceGroups/$RG/providers/Microsoft.App/agents/$AGENT_NAME
-     2. In "Integrations" → "GitHub", install the GitHub App for $REPO
-     3. Set the labels to apply to filed issues: sre-finding, needs-triage
-     4. The agent will then file issues directly. The triage workflow
-        in this repo takes over from there.
-
-  B) Bridge via Azure Monitor Action Group + Logic App (fallback)
-     Run: bash scripts/setup-azmon-github-bridge.sh
-     This wires:
-       SRE Agent → AzMonitor incident → Action Group (webhook)
-                 → Logic App → POST /repos/$REPO/issues
-
-  C) Manual simulation (already in place — works without any bridge)
-     Run: bash scripts/simulate-sre-issue.sh "<title>" <scenario>
-     Files an issue exactly like the SRE Agent would. Triage workflow
-     fires the same way.
-EOF
-else
-  echo "✓ GitHub integration is configured. Agent will file findings directly."
-  echo "  Current config:"
-  echo "$GH_CONFIG" | jq .
+UAMI_ID=$(az resource show --resource-type "Microsoft.App/agents" --name "$AGENT_NAME" -g "$RG" --api-version "$API_VERSION" --query "properties.knowledgeGraphConfiguration.identity" -o tsv) || true
+if [[ -n "$UAMI_ID" ]]; then
+  UAMI_PRINCIPAL=$(az resource show --ids "$UAMI_ID" --query "properties.principalId" -o tsv)
+  az role assignment list --assignee "$UAMI_PRINCIPAL" --all -o tsv \
+    --query "[?contains(scope, '/resourceGroups/${RG}') || contains(scope, '/resourceGroups/${RG,,}') || contains(scope, '/resourceGroups/${RG^^}')].roleDefinitionName" 2>/dev/null \
+    | sort -u | sed 's/^/   - /'
 fi
 
 echo
-echo "─── Required GitHub secrets ────────────────────────────"
-for s in AZURE_CLIENT_ID AZURE_TENANT_ID AZURE_SUBSCRIPTION_ID AZURE_OPENAI_ENDPOINT; do
-  if gh secret list --json name --jq '.[].name' 2>/dev/null | grep -qx "$s"; then
-    echo "  ✓ $s set"
-  else
-    echo "  ✗ $s missing — see docs/runbook.md §3"
-  fi
-done
+echo "→ Subagents on $AGENT_NAME:"
+az rest --method GET \
+  --url "https://management.azure.com$(az resource show --resource-type Microsoft.App/agents --name "$AGENT_NAME" -g "$RG" --api-version "$API_VERSION" --query id -o tsv)/subagents?api-version=${API_VERSION}" \
+  --query "value[].name" -o tsv 2>/dev/null | sed 's/^/   - /' || echo "   (none — or tenant doesn't support Agent Extensions; paste via portal instead)"
+
+echo
+echo "─── Required GitHub secrets (for the triage skill) ────────────"
+if [[ -n "$GITHUB_REPO" ]]; then
+  for s in AZURE_CLIENT_ID AZURE_TENANT_ID AZURE_SUBSCRIPTION_ID AZURE_OPENAI_ENDPOINT; do
+    if gh secret list --repo "$GITHUB_REPO" --json name --jq '.[].name' 2>/dev/null | grep -qx "$s"; then
+      echo "  ✓ $s set on $GITHUB_REPO"
+    else
+      echo "  ✗ $s missing on $GITHUB_REPO  — see docs/wif-setup.md"
+    fi
+  done
+else
+  echo "  (skipped — set GITHUB_REPO=owner/repo to verify)"
+fi

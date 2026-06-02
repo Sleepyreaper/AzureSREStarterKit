@@ -84,7 +84,7 @@ Then include:
 
 **Classification:** Bug → `bug:infra`, severity:medium
 
-**Analysis:** The `ogedemo-storm-vmss` scale set has no autoscale settings (capacity locked at 1). This matches the `storm-no-autoscale` scenario tag. Reproduction is straightforward — `az monitor autoscale list -g {YOUR_RG} --query "[?targetResourceUri contains 'storm-vmss']"` returns empty.
+**Analysis:** The `<your-vmss>` scale set has no autoscale settings (capacity locked at 1). This matches the `storm-no-autoscale` scenario tag. Reproduction is straightforward — `az monitor autoscale list -g {YOUR_RG} --query "[?targetResourceUri contains 'storm-vmss']"` returns empty.
 
 **Suggested next step:** Following `storm-readiness-runbook`. Will propose a CPU-based autoscale Bicep patch.
 

@@ -1,62 +1,59 @@
-# {YOUR_RG} — Solution Architecture
+# {YOUR_RG} — Solution Architecture (Template)
 
-> Knowledge base entry loaded into Azure SRE Agent (`{YOUR_SRE_AGENT_NAME}`). Provides the agent with the operational context it needs to triage findings in this resource group.
+> Knowledge base entry loaded into Azure SRE Agent (`{YOUR_SRE_AGENT_NAME}`). Gives the agent the operational context it needs to triage findings in this resource group. **Replace placeholders before uploading.**
 
 ## Operational context
 
-`{YOUR_RG}` is a demo / showcase environment in subscription `{YOUR_SUBSCRIPTION_ID}` (region `eastus2`). It deliberately contains broken-on-purpose resources so the Azure SRE Agent can demonstrate end-to-end agentic operations:
+`{YOUR_RG}` is the resource group `{YOUR_SRE_AGENT_NAME}` monitors in subscription `{YOUR_SUBSCRIPTION_ID}` (region `{YOUR_REGION}`). The agent demonstrates an end-to-end agentic operations loop:
 
-- **detection** (SRE Agent's own knowledge graph + Azure Monitor signals)
-- **triage** (custom subagents using runbooks in this knowledge base)
-- **proposal** (GitHub issues opened on `{GITHUB_OWNER}/{GITHUB_REPO}`)
-- **human approval** (PR review + merge gate)
-- **deployment** (GitHub Actions redeploys the fixed scenario back to `{YOUR_RG}`)
+- **detection** — SRE Agent's own knowledge graph + Azure Monitor signals
+- **triage** — custom subagents (`security-fixer`, `cost-optimizer`, `reliability-fixer`, `code-analyzer`) using runbooks in this knowledge base
+- **proposal** — GitHub issues opened on `{GITHUB_OWNER}/{GITHUB_REPO}`
+- **human approval** — PR review + merge gate (handled by the triage workflow in `skills/issue-triage/`)
+- **deployment** — your own GitHub Actions deploy pipeline applies the merged fix back to `{YOUR_RG}`
 
-## Tag conventions
+## Tag conventions (recommended)
 
-Every demo resource carries these tags:
+Tagging every resource the agent might investigate is the single highest-leverage thing you can do to improve triage quality. The subagents look for these tags first:
 
-| Tag | Purpose |
-|---|---|
-| `scenario` | One of: `storm-no-autoscale`, `security-open-ssh`, `cost-orphaned-resources`, `reliability-cert-expiry` |
-| `support-owner` | Email of the team that owns the resource (always `demo-team@example.com` here) |
-| `expected-finding` | What this resource is supposed to demonstrate when broken |
-| `simulates` | What real-world infrastructure pattern this represents in a real environment |
+| Tag | Purpose | Example value |
+|---|---|---|
+| `owner` | Who to notify when something breaks | `team-platform@example.com` |
+| `criticality` | Blast-radius hint | `tier-1` / `tier-2` / `tier-3` / `demo` |
+| `cost-center` | Cost-optimizer routes findings here | `cc-12345` |
+| `scenario` | (Optional) maps the resource to a specific known pattern, useful when you've intentionally seeded broken-on-purpose resources for demos | `storm-no-autoscale` |
+| `expected-finding` | (Optional) lets the agent sanity-check its diagnosis against the resource's intended state | `vmss-no-autoscale-rules` |
 
-When investigating, **always read the tags first** — they tell you what the resource is supposed to demonstrate. If `expected-finding` matches your independent assessment, you're on the right track.
+When investigating, **always read the tags first** — they tell you what the resource is, who owns it, and (if seeded) what it's supposed to demonstrate.
 
-## Resource inventory
+## Resource inventory (example — adapt to your environment)
 
-| Resource | Type | Scenario | Notes |
+Replace this table with your actual inventory. Pattern: name · type · purpose · notes.
+
+| Resource | Type | Purpose | Notes |
 |---|---|---|---|
-| `ogedemo-storm-vmss` | `Microsoft.Compute/virtualMachineScaleSets` | storm | No autoscale settings; capacity locked at 1. Simulates a customer-portal tier. |
-| `ogedemo-storm-vnet` | `Microsoft.Network/virtualNetworks` | storm | Hosts the VMSS subnet. |
-| `ogedemo-security-nsg` | `Microsoft.Network/networkSecurityGroups` | security | Has Allow inbound for ports 22 and 3389 from `0.0.0.0/0`. |
-| `ogedemo-cost-orphan-disk` | `Microsoft.Compute/disks` | cost | 1 TB Premium SSD, unattached. ~$135/month wasted. |
-| `ogedemo-cost-orphan-pip` | `Microsoft.Network/publicIPAddresses` | cost | Standard SKU static IP, no association. |
-| `ogekv...` (random suffix) | `Microsoft.KeyVault/vaults` | reliability | Contains `near-expiry-cert` (30-day validity, no rotation policy). |
-| `{PROTECTED_RESOURCE}` | `Microsoft.CognitiveServices/accounts` | (production) | Azure AI Foundry project that hosts agents for the sister Cloud Weather Operations platform app. **Do not break this.** |
-
-## Companion app: sister Cloud Weather Operations platform
-
-A separate Flask app at `https://cwo.example.com` runs an interactive multi-agent debate UI on top of the same Foundry account (`{PROTECTED_RESOURCE}`). It is **not** a target for SRE Agent action — it is a sibling system that demonstrates a different agentic pattern (synchronous chat with a 6-agent council).
+| `<vmss-name>` | `Microsoft.Compute/virtualMachineScaleSets` | Customer-facing tier | Watch for missing autoscale settings |
+| `<vnet-name>` | `Microsoft.Network/virtualNetworks` | Hosts compute subnets | |
+| `<nsg-name>` | `Microsoft.Network/networkSecurityGroups` | Inbound traffic policy | Audit `0.0.0.0/0` source rules monthly |
+| `<disk-name>` | `Microsoft.Compute/disks` | Premium SSD for `<vmss-name>` | Watch for `Unattached` state >7 days |
+| `<kv-name>` | `Microsoft.KeyVault/vaults` | TLS certs, app secrets | Watch for certs expiring within 30 days |
+| `{PROTECTED_RESOURCE}` | varies | Production resource the agent **must not modify** | Listed for awareness; out of scope for any write actions |
 
 ## Investigation patterns
 
 When you find an issue in `{YOUR_RG}`:
 
-1. **Read the tags.** The `expected-finding` tag tells you what the resource is supposed to demonstrate. If your analysis matches, great. If not, dig deeper.
-2. **Check `support-owner`.** Route findings to that email.
-3. **Search the knowledge base for the matching scenario runbook** (e.g., `security-open-ssh` → `security-drift-runbook.md`).
-4. **Follow the runbook** end-to-end. Don't skip steps.
-5. **File a GitHub issue** on `{GITHUB_OWNER}/{GITHUB_REPO}` using the incident report template.
-6. **Never write to resources outside `{YOUR_RG}`** — your scope is bounded.
+1. **Read the tags.** `criticality` tells you how loud to be; `owner` tells you who to notify; `expected-finding` (if present) tells you whether the issue is a known/intentional state.
+2. **Search the knowledge base for the matching scenario runbook** (e.g., open NSG rule → `security-drift-runbook.md`).
+3. **Follow the runbook** end-to-end. Don't skip diagnostic steps.
+4. **File a GitHub issue** on `{GITHUB_OWNER}/{GITHUB_REPO}` using `incident-report-template.md`. Always include full ARM resource IDs in the References section.
+5. **Never write to resources outside `{YOUR_RG}`** — your scope is bounded by the agent's knowledge-graph configuration.
 
 ## Human-in-the-loop boundary
 
-Your agent's `agent_type` is configured per subagent. For this showcase:
+Each subagent has an `agent_type`. For this starter kit:
 
-- `code-analyzer`, `cost-optimizer`, `security-fixer`, `reliability-fixer` — **Review** mode (propose only, humans approve via PR)
-- `issue-triager` — **Autonomous** (labels and comments on issues without approval)
+- `code-analyzer`, `cost-optimizer`, `security-fixer`, `reliability-fixer` — **Review** mode (propose only; humans approve via PR)
+- `issue-triager` — **Autonomous** (labels and comments on issues without approval; cannot modify code or Azure)
 
-Never escalate to Autonomous mode without explicit human authorization.
+Never escalate a Review-mode subagent to Autonomous mode without explicit human authorization.

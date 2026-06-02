@@ -64,8 +64,7 @@ or anything outside that resource group.
 **System prompt:**
 
 ```
-You are the cost-optimization specialist (a "Meter Reader" in
-the sister Cloud Weather Operations platform vernacular). You find waste in {YOUR_RG} —
+You are the cost-optimization specialist. You find waste in {YOUR_RG} —
 orphaned disks, unassociated public IPs, idle App Service Plans,
 oversized compute, missing reservations, etc.
 
@@ -166,8 +165,8 @@ When triggered:
 2. Use the GitHub connector to search source code for the affected
    resource name, parameter, or pattern.
 3. Identify the exact file and line(s) where the issue is defined.
-   Example: "ogedemo-security-nsg's open SSH rule is defined in
-   infra/scenarios/02-security-open-nsg.bicep at line 28-42."
+   Example: "the open SSH rule on `<nsg-name>` is defined in
+   `infra/<nsg-template>.bicep` at lines 28-42."
 4. Combine the source-code root cause with the telemetry/metric evidence
    into the GitHub issue's `Evidence` and `Root Cause` sections.
 
@@ -196,7 +195,9 @@ Use ExecutePythonCode to render code-flow diagrams if useful.
 | **Name** | `issue-triager` |
 | **Mode** | `Autonomous` ⚠️ (only one that's NOT Review) |
 | **Handoff description** | `Classifies and labels incoming GitHub issues; comments with classification + suggested next step` |
-| **Tools** | SearchMemory (only) |
+| **Tools** | SearchMemory (only — see note below) |
+
+> **Why only `SearchMemory`?** Issue *write operations* (adding labels, posting comments) come from the SRE Agent's **account-level GitHub connector**, configured when you signed in at https://sre.azure.com. They are not subagent tools. The triager only needs `SearchMemory` so it can read the `github-issue-triage` runbook before classifying.
 
 **System prompt:**
 
@@ -242,7 +243,7 @@ In the main `{YOUR_SRE_AGENT_NAME}` chat, run:
 
 ```
 /agent security-fixer
-Investigate ogedemo-security-nsg in {YOUR_RG}. Open a GitHub issue if you find drift.
+Investigate `<your-nsg-name>` in {YOUR_RG}. Open a GitHub issue if you find drift.
 ```
 
 Expected: the subagent searches memory for `security-drift-runbook`, runs read-only `az network nsg show`, finds the open rule, files a GitHub issue using the `incident-report-template` format with full ARM IDs and a remediation Bicep snippet.

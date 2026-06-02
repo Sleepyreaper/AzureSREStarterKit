@@ -1,20 +1,52 @@
 #!/usr/bin/env bash
-# Seeds the Key Vault from scenario 04 with a near-expiry self-signed cert.
-# Run after `bash infra/scenarios/deploy-all.sh`.
+# =============================================================================
+# seed-expiring-cert.sh — plant a "near-expiry" self-signed cert in a Key Vault
+#
+# Useful for exercising the reliability-fixer subagent without waiting for
+# a real cert to age.
+#
+# Usage:
+#   bash scripts/seed-expiring-cert.sh                  # uses $RG and first KV
+#   bash scripts/seed-expiring-cert.sh -g <rg>          # explicit RG
+#   bash scripts/seed-expiring-cert.sh -g <rg> -v <kv>  # explicit Key Vault
+#   bash scripts/seed-expiring-cert.sh -g <rg> -v <kv> -n <cert-name>
+# =============================================================================
 set -euo pipefail
 
-RG="${1:-{YOUR_RG}}"
-KV_NAME="$(az keyvault list -g "$RG" --query "[?starts_with(name, 'ogekv')] | [0].name" -o tsv)"
+CERT_NAME="near-expiry-cert"
+RG="${RG:-}"
+KV_NAME=""
 
-if [ -z "$KV_NAME" ]; then
-  echo "✗ Could not find reliability scenario Key Vault. Run scenario 4 deploy first."
-  exit 1
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    -g|--resource-group) RG="$2"; shift 2 ;;
+    -v|--vault-name)     KV_NAME="$2"; shift 2 ;;
+    -n|--cert-name)      CERT_NAME="$2"; shift 2 ;;
+    -h|--help) sed -n '2,12p' "$0"; exit 0 ;;
+    *) echo "Unknown arg: $1" >&2; exit 2 ;;
+  esac
+done
+
+if [[ -z "$RG" ]]; then
+  echo "✗ Resource group required.  -g <rg>   or   export RG=…" >&2
+  exit 2
 fi
 
-echo "→ Seeding $KV_NAME with near-expiry self-signed cert 'near-expiry-cert'..."
+if [[ -z "$KV_NAME" ]]; then
+  KV_NAME=$(az keyvault list -g "$RG" --query "[0].name" -o tsv 2>/dev/null || true)
+  if [[ -z "$KV_NAME" ]]; then
+    echo "✗ No Key Vault found in '$RG'. Create one first, or pass -v <vault-name>." >&2
+    exit 1
+  fi
+  echo "→ Using first Key Vault in $RG: $KV_NAME"
+fi
 
-# Build a policy with 30-day validity, so the cert is "near-expiry" from day 1.
-cat > /tmp/cert-policy.json <<'EOF'
+echo "→ Seeding $KV_NAME with near-expiry self-signed cert '$CERT_NAME' ..."
+
+POLICY=$(mktemp -t cert-policy-XXXXXX.json)
+trap 'rm -f "$POLICY"' EXIT
+
+cat > "$POLICY" <<JSON
 {
   "issuerParameters": { "name": "Self" },
   "x509CertificateProperties": {
@@ -31,12 +63,12 @@ cat > /tmp/cert-policy.json <<'EOF'
   "secretProperties": { "contentType": "application/x-pkcs12" },
   "lifetimeActions": []
 }
-EOF
+JSON
 
 az keyvault certificate create \
   --vault-name "$KV_NAME" \
-  --name "near-expiry-cert" \
-  --policy @/tmp/cert-policy.json \
+  --name "$CERT_NAME" \
+  --policy @"$POLICY" \
   --query "{name:name, expires:attributes.expires, status:status}" -o table
 
 echo "✓ Done. The cert expires in ~30 days and has no rotation policy attached."

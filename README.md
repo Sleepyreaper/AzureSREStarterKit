@@ -1,75 +1,105 @@
 # Azure SRE Agent Starter Kit
 
-A copy-paste starter kit for the [**Azure SRE Agent**](https://sre.azure.com).
+A copy-paste starter kit for the [**Azure SRE Agent**](https://aka.ms/sreagent).
 
 Today there is **no first-party way to deploy an Azure SRE Agent's subagents, prompts, or runbooks as code**. The agent and its extensions are configured in the portal at https://sre.azure.com. This repo gives you everything you need to do that configuration in minutes instead of days, by sharing the YAML, prompts, and runbooks we use in production-style demos.
 
 ## What's in the box
 
-```
-subagents/                          # 5 subagent specs — paste into Agent Canvas
-  security-fixer.yaml               #   investigates NSG / encryption / public-exposure drift
-  reliability-fixer.yaml            #   finds availability gaps (autoscale, capacity, SLO)
-  cost-optimizer.yaml               #   finds waste (oversized VMs, orphaned disks, idle APIM)
-  code-analyzer.yaml                #   reads the IaC repo, cross-references findings
-  issue-triager.yaml                #   autonomous classify/label/route on inbound GitHub issues
+### [`subagents/`](subagents/) — 5 subagent specs (paste into Agent Canvas)
 
-knowledge-base/                     # 6 runbooks the SRE Agent indexes
-  security-drift-runbook.md
-  reliability-runbook.md
-  cost-waste-runbook.md
-  storm-readiness-runbook.md
-  github-issue-triage.md
-  incident-report-template.md
-  example-environment-architecture.md
+- [`security-fixer.yaml`](subagents/security-fixer.yaml) — investigates NSG / encryption / public-exposure drift
+- [`reliability-fixer.yaml`](subagents/reliability-fixer.yaml) — finds availability gaps (autoscale, capacity, certs)
+- [`cost-optimizer.yaml`](subagents/cost-optimizer.yaml) — finds waste (oversized VMs, orphaned disks, idle plans)
+- [`code-analyzer.yaml`](subagents/code-analyzer.yaml) — reads the IaC repo, cross-references findings
+- [`issue-triager.yaml`](subagents/issue-triager.yaml) — autonomous classify/label/route on inbound GitHub issues
 
-skills/issue-triage/                # Close the loop: SRE Agent files issue → Action drafts PR
-  workflow.yml                      #   GitHub Action trigger
-  triage-action/                    #   Python that reads the agent's issue and proposes a code fix
+### [`knowledge-base/`](knowledge-base/) — 7 runbooks the SRE Agent indexes
 
-scripts/                            # Helpers (bash) for repeatable config
-  apply-sre-config.sh               # Index knowledge base, wire CodeRepo + telemetry connectors, grant RBAC
-  register-github-repo.sh           # Register a GitHub repo as a CodeRepo (after OAuth)
-  check-sre-agent.sh                # Health probe — endpoint, KG state, subagent count
-  simulate-sre-issue.sh             # Fire a test investigation thread
-  seed-expiring-cert.sh             # Plant a "near-expiry" Key Vault cert for reliability demos
+- [`security-drift-runbook.md`](knowledge-base/security-drift-runbook.md)
+- [`reliability-runbook.md`](knowledge-base/reliability-runbook.md)
+- [`cost-waste-runbook.md`](knowledge-base/cost-waste-runbook.md)
+- [`storm-readiness-runbook.md`](knowledge-base/storm-readiness-runbook.md)
+- [`github-issue-triage.md`](knowledge-base/github-issue-triage.md)
+- [`incident-report-template.md`](knowledge-base/incident-report-template.md)
+- [`example-environment-architecture.md`](knowledge-base/example-environment-architecture.md)
 
-docs/
-  subagent-paste-cheatsheet.md      # ⭐ The 10-min portal walkthrough
-  applying-subagents-via-portal.md  # Deeper guide on Agent Canvas mechanics
-  agent-design.md                   # Why these 5 subagents, why this division of labor
-  azure-sre-resources.md            # Links to every public Azure SRE Agent doc + blog
-  scenarios.md                      # Demoable IT-ops scenarios you can deploy on top
-```
+### [`skills/issue-triage/`](skills/issue-triage/) — close the loop: SRE Agent files issue → Action drafts PR
+
+- [`workflow.yml`](skills/issue-triage/workflow.yml) — copy to `.github/workflows/issue-triage.yml` in your IaC repo
+- [`triage_agent/`](skills/issue-triage/triage_agent/) — Python package the workflow runs (reads the issue, calls Azure OpenAI, writes a PR body)
+- [`README.md`](skills/issue-triage/README.md) — install + secrets checklist
+
+### [`scripts/`](scripts/) — helpers (bash) for repeatable config
+
+- [`apply-sre-config.sh`](scripts/apply-sre-config.sh) — index the knowledge base, register your IaC repo as a CodeRepo, grant the agent's UAMI Reader / Monitoring Reader / LAW Reader on `RG`, and (optionally) wire Application Insights + Log Analytics connectors
+- [`register-github-repo.sh`](scripts/register-github-repo.sh) — register a single GitHub repo as a CodeRepo (after you've signed into GitHub at https://sre.azure.com once)
+- [`check-sre-agent.sh`](scripts/check-sre-agent.sh) — health probe: endpoint, KG state, subagent count, UAMI RBAC, required GitHub secrets
+- [`simulate-sre-issue.sh`](scripts/simulate-sre-issue.sh) — file a synthetic SRE-style issue to exercise the triage loop without waiting for a real finding
+- [`seed-expiring-cert.sh`](scripts/seed-expiring-cert.sh) — plant a "near-expiry" Key Vault cert for reliability demos
+
+### [`docs/`](docs/)
+
+- [`subagent-paste-cheatsheet.md`](docs/subagent-paste-cheatsheet.md) — ⭐ the 10-min portal walkthrough; one block per subagent ready to paste
+- [`applying-subagents-via-portal.md`](docs/applying-subagents-via-portal.md) — deeper guide on Agent Canvas mechanics
+- [`agent-design.md`](docs/agent-design.md) — why a single triage agent (not a council), and how it's wired
+- [`azure-sre-resources.md`](docs/azure-sre-resources.md) — curated index of every public Azure SRE Agent doc + blog
+- [`scenarios.md`](docs/scenarios.md) — four broken-on-purpose patterns that pair with the runbooks
+- [`wif-setup.md`](docs/wif-setup.md) — step-by-step Workload Identity Federation setup for the triage workflow
 
 ## Quick start
 
-1. **Create an SRE Agent** at https://sre.azure.com (Standard plan). Pick a name, scope it to your resource group(s), set action mode to **review** for safety.
-2. **OAuth your GitHub** in the agent's CodeRepo settings, then register your IaC repo.
-3. **Run** `scripts/apply-sre-config.sh` against your agent — it indexes the runbooks, grants RBAC, and (optionally) wires Application Insights + Log Analytics connectors.
-4. **Open Agent Canvas** in the portal and paste each subagent from `docs/subagent-paste-cheatsheet.md` (one per agent — Name, Mode, Handoff, Tools, system prompt).
-5. **Drop the triage workflow** in your repo at `.github/workflows/issue-triage.yml` (copy from `skills/issue-triage/`).
-6. **Smoke test** with `/agent security-fixer` in a fresh thread, or run `scripts/simulate-sre-issue.sh`.
+```bash
+# 0. Sign in to Azure and create / pick your SRE Agent
+az login
+# Portal: https://sre.azure.com → New SRE Agent → pick a name, scope to your RG, action mode = Review
+
+# 1. Run the one-shot configurator
+export RG=rg-your-monitored-rg
+export AGENT_NAME=your-sre-agent
+export GITHUB_REPO=owner/your-iac-repo
+bash scripts/apply-sre-config.sh
+
+#    Optional:
+#    --with-app-telemetry  → also wire App Insights + Log Analytics connectors
+#                            (requires APP_INSIGHTS_ID + LOG_ANALYTICS_ID env vars)
+
+# 2. Paste the 5 subagents into Agent Canvas — follow docs/subagent-paste-cheatsheet.md
+#    (the data-plane subagent API is gated to internal tenants today; the portal isn't)
+
+# 3. Wire the triage skill into your IaC repo
+#    Copy skills/issue-triage/workflow.yml → .github/workflows/issue-triage.yml
+#    Copy skills/issue-triage/triage_agent/ → .github/triage_agent/
+#    Set the GitHub secrets per docs/wif-setup.md
+
+# 4. Smoke test
+bash scripts/check-sre-agent.sh
+bash scripts/simulate-sre-issue.sh "Open NSG rule on web-nsg" security web-nsg "$RG"
+```
+
+`scripts/apply-sre-config.sh` is idempotent — re-run it after every knowledge-base edit to re-index.
 
 ## Placeholders
 
-The YAML and scripts use these placeholders — replace before pasting:
+The YAML, runbooks, and scripts use these placeholders — replace before pasting (or set as env vars for the scripts):
 
 | Placeholder | Replace with |
 |---|---|
-| `{YOUR_RG}` | Resource group(s) the agent monitors |
+| `{YOUR_RG}` | Resource group the agent monitors |
 | `{YOUR_SRE_AGENT_NAME}` | Your SRE Agent resource name |
 | `{YOUR_SUBSCRIPTION_ID}` | Your Azure subscription |
+| `{YOUR_REGION}` | Azure region of the monitored RG (e.g. `eastus2`) |
 | `{GITHUB_OWNER}` / `{GITHUB_REPO}` | Your IaC repo coordinates |
-| `{PROTECTED_RESOURCE}` | Any resource the agent must NOT modify (e.g. Foundry account) |
-| `YOUR_APP_INSIGHTS` / `YOUR_LOG_ANALYTICS_WS` | If wiring app telemetry connectors |
-| `{YOUR_ORG}` / `{CUSTOMER_RG}` | Branding / multi-tenant naming |
+| `{PROTECTED_RESOURCE}` | Any resource the agent must NOT modify (e.g. a Foundry account) |
+| `{YOUR_ORG}` | Branding string used in agent comment headers |
+| `{CUSTOMER_RG}` | (Optional) second RG for multi-tenant / Lighthouse demos |
+| `TRIAGE_DEPLOYMENT` | Azure OpenAI **deployment name** the triage workflow calls (not a model name; e.g. `gpt-4o-mini`) |
 
 ## Why this exists
 
 The Azure SRE Agent's value is in its **investigation playbooks** — the system prompts, the knowledge base it queries, and the way subagents hand off work to each other. None of that is shipped or templated by default. This kit captures one working configuration so others don't start from a blank canvas.
 
-PRs welcome — especially new subagents and runbooks for other scenarios (databases, network egress, FinOps tagging, etc.).
+PRs welcome — especially new subagents and runbooks for other scenarios (databases, network egress, FinOps tagging, etc.). See [`CONTRIBUTING.md`](CONTRIBUTING.md).
 
 ## License
 

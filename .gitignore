@@ -1,0 +1,37 @@
+# Editors
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.pytest_cache/
+.venv/
+venv/
+env/
+
+# Build / output
+out/
+dist/
+build/
+*.bak
+*.tmp
+*.log
+
+# Secrets (defence in depth — never commit, never)
+.env
+.env.*
+!.env.example
+*.pem
+*.pfx
+*.key
+azure-credentials.json

@@ -37,4 +37,8 @@ spec:
   handoff_description: Classifies and labels incoming GitHub issues; comments with classification + suggested next step
   agent_type: Autonomous
   tools:
+    # NOTE: This subagent's job is *classification*. The label/comment WRITES
+    # are performed by the SRE Agent's account-level GitHub connector (set up
+    # when you signed into GitHub at https://sre.azure.com). There is no
+    # subagent-level "WriteGitHubIssue" tool — `SearchMemory` is enough here.
     - SearchMemory

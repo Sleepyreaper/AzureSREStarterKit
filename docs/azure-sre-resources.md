@@ -6,7 +6,7 @@ Curated links Microsoft maintains for the Azure SRE Agent product. Use these to 
 
 | Resource | Link |
 |---|---|
-| Product home page | https://www.azure.com/sreagent |
+| Product home page | https://aka.ms/sreagent |
 | Documentation hub | https://sre.azure.com/docs/overview |
 | Portal (create & manage agents) | https://sre.azure.com / https://aka.ms/sreagent |
 | Pricing & billing | https://aka.ms/sreagent/pricing |
@@ -19,13 +19,13 @@ Curated links Microsoft maintains for the Azure SRE Agent product. Use these to 
 
 | Concept | Microsoft doc | What we do |
 |---|---|---|
-| Custom agents (subagents) | https://sre.azure.com/docs/concepts/subagents | YAML specs in `sre-config/agents/` |
+| Custom agents (subagents) | https://sre.azure.com/docs/concepts/subagents | YAML specs in `subagents/` |
 | Response plans | https://sre.azure.com/docs/capabilities/incident-response-plans | (planned) routes alerts → subagents |
 | Connectors | https://sre.azure.com/docs/concepts/connectors | GitHub OAuth + Azure Monitor + LAW + App Insights |
 | Memory & knowledge | https://sre.azure.com/docs/concepts/memory | `knowledge-base/*.md` uploaded via data plane |
 | Skills (MCP) | https://sre.azure.com/docs/concepts/skills | (planned) MCP extensions for customer-specific tools |
 | Incident platforms | https://sre.azure.com/docs/concepts/incident-platforms | AzMonitor (already wired on {YOUR_SRE_AGENT_NAME}) |
-| Permissions | https://sre.azure.com/docs/tutorials/agent-config/manage-permissions | UAMI roles documented in `docs/runbook.md` |
+| Permissions | https://sre.azure.com/docs/tutorials/agent-config/manage-permissions | UAMI roles applied by `scripts/apply-sre-config.sh` (Reader, Monitoring Reader, Log Analytics Reader on the monitored RG) |
 
 ## Post-GA blog posts worth incorporating
 
@@ -59,7 +59,8 @@ Built-in connectors today: Azure Monitor, Log Analytics, Application Insights, M
 
 Built-in subagent tools today:
 - `SearchMemory` — query the knowledge base
-- `RunAzCliReadCommands` / `RunAzCliWriteCommands` / `GetAzCliHelp`
+- `RunAzCliReadCommands` / `GetAzCliHelp` — read-only Azure CLI
+- `RunAzCliWriteCommands` — **mutating** Azure CLI. Tick only on Autonomous-mode subagents you explicitly trust; never tick on Review-mode subagents (the cheat sheet calls this out)
 - `QueryLogAnalyticsByWorkspaceId` — KQL against a LAW
 - `QueryAppInsightsByResourceId` — KQL against App Insights
 - `ExecutePythonCode` — code interpreter for charts, calculations, file processing
@@ -75,8 +76,8 @@ This is relevant for budgeting demos at scale — the showcase scenarios consume
 
 ## Patterns we're NOT yet using (next-iteration ideas)
 
-- **Response Plans** — automated routing from incident filter → subagent. Today the user has to invoke a subagent via `/agent` in chat. With response plans, an Azure Monitor alert on `ogedemo-storm-vmss` could automatically invoke `reliability-fixer` without human typing.
+- **Response Plans** — automated routing from incident filter → subagent. Today the user has to invoke a subagent via `/agent` in chat. With response plans, an Azure Monitor alert on `<your-vmss>` could automatically invoke `reliability-fixer` without human typing.
 - **MCP servers** — extend with Slack, Jira, Datadog, or a custom MCP server that exposes domain-specific telemetry.
-- **Scheduled tasks** — "daily morning briefing on {YOUR_RG}" matches the sister Cloud Weather Operations platform pattern.
+- **Scheduled tasks** — a "daily morning briefing on {YOUR_RG}" run on a cron, summarized to Teams or email.
 - **Defender for Cloud integration** — pull security recommendations directly into `security-fixer`'s context.
 - **Lighthouse multi-tenant** — let one `{YOUR_SRE_AGENT_NAME}` instance manage both {YOUR_RG} and a customer-side RG.

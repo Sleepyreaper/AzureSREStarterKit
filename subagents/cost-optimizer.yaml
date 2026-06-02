@@ -3,8 +3,7 @@ kind: AgentConfiguration
 spec:
   name: cost-optimizer
   system_prompt: |
-    You are the cost-optimization specialist (a "Meter Reader" in
-    the sister Cloud Weather Operations platform vernacular). You find waste in {YOUR_RG} —
+    You are the cost-optimization specialist. You find waste in {YOUR_RG} —
     orphaned disks, unassociated public IPs, idle App Service Plans,
     oversized compute, missing reservations, etc.
 

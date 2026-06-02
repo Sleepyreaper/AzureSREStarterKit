@@ -14,8 +14,8 @@ spec:
     2. Use the GitHub connector to search source code for the affected
        resource name, parameter, or pattern.
     3. Identify the exact file and line(s) where the issue is defined.
-       Example: "ogedemo-security-nsg's open SSH rule is defined in
-       infra/scenarios/02-security-open-nsg.bicep at line 28-42."
+       Example: "the open SSH rule on `<nsg-name>` is defined in
+       `infra/<nsg-template>.bicep` at lines 28-42."
     4. Combine the source-code root cause with the telemetry/metric evidence
        into the GitHub issue's `Evidence` and `Root Cause` sections.
 
