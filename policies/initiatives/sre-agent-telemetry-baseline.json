@@ -1,0 +1,71 @@
+{
+  "properties": {
+    "displayName": "SRE Agent — Telemetry Baseline",
+    "policyType": "Custom",
+    "description": "Bundles the diagnostic-settings DINE policies and tag-audit policies that the runbooks in this starter kit depend on. Assign at subscription or management-group scope. The agent UAMI granted by scripts/apply-sre-config.sh has the read permissions; the DINE deployments use a managed identity created by the policy assignment.",
+    "metadata": {
+      "version": "1.0.0",
+      "category": "SRE Agent"
+    },
+    "parameters": {
+      "logAnalyticsWorkspaceId": {
+        "type": "String",
+        "metadata": {
+          "displayName": "Log Analytics Workspace",
+          "description": "All DINE policies in this initiative will send diagnostic settings here.",
+          "strongType": "Microsoft.OperationalInsights/workspaces"
+        }
+      },
+      "diagnosticSettingName": {
+        "type": "String",
+        "defaultValue": "to-shared-law"
+      },
+      "tagAuditEffect": {
+        "type": "String",
+        "defaultValue": "Audit",
+        "allowedValues": ["Audit", "Deny", "Disabled"]
+      },
+      "deployEffect": {
+        "type": "String",
+        "defaultValue": "DeployIfNotExists",
+        "allowedValues": ["DeployIfNotExists", "AuditIfNotExists", "Disabled"]
+      }
+    },
+    "policyDefinitions": [
+      {
+        "policyDefinitionReferenceId": "diagKeyVault",
+        "policyDefinitionId": "REPLACE_WITH_KEYVAULT_POLICY_DEFINITION_ID",
+        "parameters": {
+          "logAnalyticsWorkspaceId": { "value": "[parameters('logAnalyticsWorkspaceId')]" },
+          "diagnosticSettingName":   { "value": "[parameters('diagnosticSettingName')]" },
+          "effect":                  { "value": "[parameters('deployEffect')]" }
+        }
+      },
+      {
+        "policyDefinitionReferenceId": "diagNsg",
+        "policyDefinitionId": "REPLACE_WITH_NSG_POLICY_DEFINITION_ID",
+        "parameters": {
+          "logAnalyticsWorkspaceId": { "value": "[parameters('logAnalyticsWorkspaceId')]" },
+          "diagnosticSettingName":   { "value": "[parameters('diagnosticSettingName')]" },
+          "effect":                  { "value": "[parameters('deployEffect')]" }
+        }
+      },
+      {
+        "policyDefinitionReferenceId": "diagOpenAi",
+        "policyDefinitionId": "REPLACE_WITH_OPENAI_POLICY_DEFINITION_ID",
+        "parameters": {
+          "logAnalyticsWorkspaceId": { "value": "[parameters('logAnalyticsWorkspaceId')]" },
+          "diagnosticSettingName":   { "value": "[parameters('diagnosticSettingName')]" },
+          "effect":                  { "value": "[parameters('deployEffect')]" }
+        }
+      },
+      {
+        "policyDefinitionReferenceId": "requireSupportOwnerTag",
+        "policyDefinitionId": "REPLACE_WITH_SUPPORT_OWNER_TAG_POLICY_DEFINITION_ID",
+        "parameters": {
+          "effect": { "value": "[parameters('tagAuditEffect')]" }
+        }
+      }
+    ]
+  }
+}

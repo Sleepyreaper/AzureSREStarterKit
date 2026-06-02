@@ -1,0 +1,32 @@
+{
+  "properties": {
+    "displayName": "Require 'support-owner' tag on all resources",
+    "policyType": "Custom",
+    "mode": "Indexed",
+    "description": "Audits any resource that does not have a 'support-owner' tag. The SRE Agent runbooks (security-drift-runbook, reliability-runbook, cost-waste-runbook) all use this tag to identify who to notify when a finding is filed. Use 'Audit' first to see your exposure, then switch the effect to 'Deny' once you've remediated existing resources.",
+    "metadata": {
+      "version": "1.0.0",
+      "category": "Tags"
+    },
+    "parameters": {
+      "tagName": {
+        "type": "String",
+        "defaultValue": "support-owner"
+      },
+      "effect": {
+        "type": "String",
+        "defaultValue": "Audit",
+        "allowedValues": ["Audit", "Deny", "Disabled"]
+      }
+    },
+    "policyRule": {
+      "if": {
+        "field": "[concat('tags[', parameters('tagName'), ']')]",
+        "exists": "false"
+      },
+      "then": {
+        "effect": "[parameters('effect')]"
+      }
+    }
+  }
+}

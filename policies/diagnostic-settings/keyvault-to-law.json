@@ -1,0 +1,112 @@
+{
+  "properties": {
+    "displayName": "Deploy Diagnostic Settings for Key Vault to a Log Analytics Workspace",
+    "policyType": "Custom",
+    "mode": "Indexed",
+    "description": "Deploys diagnostic settings on Key Vault resources that don't already have them pointed at the supplied workspace. Sends 'audit' and 'allLogs' category groups plus AllMetrics.",
+    "metadata": {
+      "version": "1.0.0",
+      "category": "Monitoring"
+    },
+    "parameters": {
+      "logAnalyticsWorkspaceId": {
+        "type": "String",
+        "metadata": {
+          "displayName": "Log Analytics Workspace",
+          "description": "Full ARM resource ID of the destination workspace",
+          "strongType": "Microsoft.OperationalInsights/workspaces"
+        }
+      },
+      "diagnosticSettingName": {
+        "type": "String",
+        "defaultValue": "to-shared-law",
+        "metadata": {
+          "displayName": "Diagnostic Setting Name"
+        }
+      },
+      "effect": {
+        "type": "String",
+        "defaultValue": "DeployIfNotExists",
+        "allowedValues": [
+          "DeployIfNotExists",
+          "AuditIfNotExists",
+          "Disabled"
+        ],
+        "metadata": {
+          "displayName": "Effect"
+        }
+      }
+    },
+    "policyRule": {
+      "if": {
+        "field": "type",
+        "equals": "Microsoft.KeyVault/vaults"
+      },
+      "then": {
+        "effect": "[parameters('effect')]",
+        "details": {
+          "type": "Microsoft.Insights/diagnosticSettings",
+          "name": "[parameters('diagnosticSettingName')]",
+          "existenceCondition": {
+            "allOf": [
+              {
+                "field": "Microsoft.Insights/diagnosticSettings/workspaceId",
+                "equals": "[parameters('logAnalyticsWorkspaceId')]"
+              },
+              {
+                "field": "Microsoft.Insights/diagnosticSettings/logs.enabled",
+                "equals": "true"
+              }
+            ]
+          },
+          "roleDefinitionIds": [
+            "/providers/Microsoft.Authorization/roleDefinitions/749f88d5-cbae-40b8-bcfc-e573ddc772fa",
+            "/providers/Microsoft.Authorization/roleDefinitions/92aaf0da-9dab-42b6-94a3-d43ce8d16293"
+          ],
+          "deployment": {
+            "properties": {
+              "mode": "incremental",
+              "parameters": {
+                "resourceName": {
+                  "value": "[field('name')]"
+                },
+                "logAnalyticsWorkspaceId": {
+                  "value": "[parameters('logAnalyticsWorkspaceId')]"
+                },
+                "diagnosticSettingName": {
+                  "value": "[parameters('diagnosticSettingName')]"
+                }
+              },
+              "template": {
+                "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentTemplate.json#",
+                "contentVersion": "1.0.0.0",
+                "parameters": {
+                  "resourceName": { "type": "string" },
+                  "logAnalyticsWorkspaceId": { "type": "string" },
+                  "diagnosticSettingName": { "type": "string" }
+                },
+                "resources": [
+                  {
+                    "type": "Microsoft.KeyVault/vaults/providers/diagnosticSettings",
+                    "apiVersion": "2021-05-01-preview",
+                    "name": "[concat(parameters('resourceName'), '/Microsoft.Insights/', parameters('diagnosticSettingName'))]",
+                    "properties": {
+                      "workspaceId": "[parameters('logAnalyticsWorkspaceId')]",
+                      "logs": [
+                        { "categoryGroup": "audit",   "enabled": true },
+                        { "categoryGroup": "allLogs", "enabled": true }
+                      ],
+                      "metrics": [
+                        { "category": "AllMetrics", "enabled": true }
+                      ]
+                    }
+                  }
+                ]
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+}
