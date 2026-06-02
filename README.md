@@ -4,6 +4,18 @@ A copy-paste starter kit for the [**Azure SRE Agent**](https://aka.ms/sreagent).
 
 Today there is **no first-party way to deploy an Azure SRE Agent's subagents, prompts, or runbooks as code**. The agent and its extensions are configured in the portal at https://sre.azure.com. This repo gives you everything you need to do that configuration in minutes instead of days, by sharing the YAML, prompts, and runbooks we use in production-style demos.
 
+## Backend setup — telemetry & policy (do this first)
+
+The SRE Agent and the subagent runbooks in this kit are only as smart as the telemetry they can read. Before you paste any subagents, stand up the backend:
+
+1. **Telemetry** — [`docs/telemetry-setup.md`](docs/telemetry-setup.md)
+   Create a Log Analytics Workspace + workspace-based Application Insights, wire them to the agent via `scripts/apply-sre-config.sh --with-app-telemetry`. Includes a per-subagent table of *what* each one reads (NSGFlowLogs vs AzureDiagnostics vs AppRequests vs AppDependencies), OpenTelemetry distro snippets for your apps (Python + Node), and a daily-cap / cost-guardrail KQL.
+
+2. **Policy enforcement** — [`docs/policy-enforcement.md`](docs/policy-enforcement.md) + [`policies/`](policies/)
+   Five copy-paste Azure Policy JSONs (Key Vault / NSG / Azure OpenAI diagnostic-settings DINE + a `support-owner` tag policy + an initiative that bundles them) so the diagnostic settings the agent depends on **stay on by themselves** as new resources are created. Audit→Deny lifecycle for the tag policy is documented end-to-end.
+
+Recommended order: **policy first** (so newly created resources are wired automatically) → **`apply-sre-config.sh`** → **paste subagents**.
+
 ## What's in the box
 
 ### [`subagents/`](subagents/) — 5 subagent specs (paste into Agent Canvas)
