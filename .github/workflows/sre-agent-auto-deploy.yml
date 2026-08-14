@@ -1,0 +1,244 @@
+name: SRE Agent Auto Deploy
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - ".github/workflows/sre-agent-auto-deploy.yml"
+      - "infra/terraform/**"
+      - "knowledge-base/**"
+      - "scripts/apply-sre-config.sh"
+      - "scripts/import-existing-sre-agent.sh"
+      - "subagents/**"
+  pull_request:
+    paths:
+      - ".github/workflows/sre-agent-auto-deploy.yml"
+      - "infra/terraform/**"
+      - "knowledge-base/**"
+      - "scripts/apply-sre-config.sh"
+      - "scripts/import-existing-sre-agent.sh"
+      - "subagents/**"
+  workflow_dispatch:
+    inputs:
+      action:
+        description: Terraform action
+        required: true
+        default: apply
+        type: choice
+        options:
+          - plan
+          - apply
+          - destroy
+      confirm_destroy:
+        description: Type "destroy subscription-sre-agent" when action is destroy
+        required: false
+        type: string
+  schedule:
+    - cron: "17 8 * * 1,4"
+
+permissions:
+  actions: write
+  contents: read
+  id-token: write
+
+concurrency:
+  group: sre-agent-production
+  cancel-in-progress: false
+
+env:
+  TF_IN_AUTOMATION: "true"
+  TF_INPUT: "false"
+  TERRAFORM_DIRECTORY: infra/terraform/sre-agent
+
+jobs:
+  validate:
+    name: Validate Terraform
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Terraform
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: 1.15.5
+
+      - name: Check formatting
+        run: terraform -chdir="$TERRAFORM_DIRECTORY" fmt -check
+
+      - name: Initialize without remote state
+        run: terraform -chdir="$TERRAFORM_DIRECTORY" init -backend=false
+
+      - name: Validate configuration
+        run: terraform -chdir="$TERRAFORM_DIRECTORY" validate
+
+  deploy:
+    name: Deploy and configure SRE Agent
+    if: github.event_name != 'pull_request'
+    needs: validate
+    runs-on: ubuntu-latest
+    environment: production
+    env:
+      ARM_USE_OIDC: "true"
+      ARM_CLIENT_ID: ${{ vars.AZURE_CLIENT_ID }}
+      ARM_TENANT_ID: ${{ vars.AZURE_TENANT_ID }}
+      ARM_SUBSCRIPTION_ID: ${{ vars.AZURE_SUBSCRIPTION_ID }}
+      TF_VAR_resource_group_name: ${{ vars.SRE_AGENT_RESOURCE_GROUP }}
+      TF_VAR_location: ${{ vars.SRE_AGENT_LOCATION }}
+      TF_VAR_agent_name: ${{ vars.SRE_AGENT_NAME }}
+      TF_VAR_monthly_agent_unit_limit: ${{ vars.SRE_AGENT_MONTHLY_UNIT_LIMIT }}
+      TF_VAR_administrator_principal_ids: ${{ vars.SRE_AGENT_ADMINISTRATOR_PRINCIPAL_IDS }}
+      TF_VAR_deployment_principal_object_id: ${{ vars.AZURE_DEPLOYMENT_PRINCIPAL_OBJECT_ID }}
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Terraform
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: 1.15.5
+          terraform_wrapper: false
+
+      - name: Sign in to Azure with OIDC
+        uses: azure/login@v2
+        with:
+          client-id: ${{ vars.AZURE_CLIENT_ID }}
+          tenant-id: ${{ vars.AZURE_TENANT_ID }}
+          subscription-id: ${{ vars.AZURE_SUBSCRIPTION_ID }}
+
+      - name: Restore encrypted Terraform state
+        id: restore-state
+        uses: actions/cache/restore@v4
+        with:
+          path: .terraform-state/sre-agent.tfstate.enc
+          key: sre-agent-state-${{ github.run_id }}-${{ github.run_attempt }}
+          restore-keys: |
+            sre-agent-state-
+
+      - name: Decrypt Terraform state
+        if: steps.restore-state.outputs.cache-matched-key != ''
+        env:
+          TF_STATE_ENCRYPTION_KEY: ${{ secrets.TF_STATE_ENCRYPTION_KEY }}
+        run: |
+          openssl enc -d -aes-256-cbc -pbkdf2 \
+            -in .terraform-state/sre-agent.tfstate.enc \
+            -out "$TERRAFORM_DIRECTORY/terraform.tfstate" \
+            -pass env:TF_STATE_ENCRYPTION_KEY
+
+      - name: Initialize Terraform
+        run: terraform -chdir="$TERRAFORM_DIRECTORY" init
+
+      - name: Import existing deployment on first run
+        if: steps.restore-state.outputs.cache-matched-key == ''
+        env:
+          TF_DIR: ${{ env.TERRAFORM_DIRECTORY }}
+        run: bash scripts/import-existing-sre-agent.sh
+
+      - name: Validate destroy confirmation
+        if: github.event_name == 'workflow_dispatch' && inputs.action == 'destroy'
+        env:
+          CONFIRM_DESTROY: ${{ inputs.confirm_destroy }}
+        run: |
+          if [[ "$CONFIRM_DESTROY" != "destroy ${{ vars.SRE_AGENT_NAME }}" ]]; then
+            echo "Destroy confirmation did not match." >&2
+            exit 1
+          fi
+
+      - name: Create Terraform plan
+        run: |
+          if [[ "${{ github.event_name }}" == "workflow_dispatch" && "${{ inputs.action }}" == "destroy" ]]; then
+            terraform -chdir="$TERRAFORM_DIRECTORY" plan -destroy -out=tfplan
+          else
+            terraform -chdir="$TERRAFORM_DIRECTORY" plan -out=tfplan
+          fi
+
+      - name: Apply Terraform plan
+        if: github.event_name == 'push' || inputs.action == 'apply' || inputs.action == 'destroy'
+        run: |
+          if terraform -chdir="$TERRAFORM_DIRECTORY" apply -auto-approve tfplan; then
+            exit 0
+          fi
+
+          echo "Initial apply failed; re-registering Microsoft.App and retrying once."
+          az provider register --namespace Microsoft.App --wait
+          if [[ "${{ github.event_name }}" == "workflow_dispatch" && "${{ inputs.action }}" == "destroy" ]]; then
+            terraform -chdir="$TERRAFORM_DIRECTORY" plan -destroy -out=tfplan-retry
+          else
+            terraform -chdir="$TERRAFORM_DIRECTORY" plan -out=tfplan-retry
+          fi
+          terraform -chdir="$TERRAFORM_DIRECTORY" apply -auto-approve tfplan-retry
+
+      - name: Wait for SRE Agent data-plane access
+        if: github.event_name == 'push' || inputs.action == 'apply'
+        run: |
+          endpoint="$(terraform -chdir="$TERRAFORM_DIRECTORY" output -raw sre_agent_endpoint)"
+          token="$(az account get-access-token --resource https://azuresre.dev --query accessToken -o tsv)"
+          for attempt in {1..18}; do
+            if curl --fail --silent --show-error \
+              -H "Authorization: Bearer $token" \
+              "$endpoint/api/v1/threads" >/dev/null; then
+              exit 0
+            fi
+            sleep 10
+          done
+          echo "Timed out waiting for SRE Agent data-plane RBAC propagation." >&2
+          exit 1
+
+      - name: Install configuration dependency
+        if: github.event_name == 'push' || inputs.action == 'apply'
+        run: python3 -m pip install --disable-pip-version-check --quiet PyYAML
+
+      - name: Apply starter-kit configuration
+        if: github.event_name == 'push' || inputs.action == 'apply'
+        env:
+          RG: ${{ vars.SRE_AGENT_RESOURCE_GROUP }}
+          AGENT_NAME: ${{ vars.SRE_AGENT_NAME }}
+          REGISTER_GITHUB_REPO: ${{ vars.SRE_AGENT_REGISTER_GITHUB_REPO }}
+          SRE_AGENT_GITHUB_PAT: ${{ secrets.SRE_AGENT_GITHUB_PAT }}
+        run: |
+          export APP_INSIGHTS_ID
+          export LOG_ANALYTICS_ID
+          APP_INSIGHTS_ID="$(terraform -chdir="$TERRAFORM_DIRECTORY" output -raw application_insights_id)"
+          LOG_ANALYTICS_ID="$(terraform -chdir="$TERRAFORM_DIRECTORY" output -raw log_analytics_workspace_id)"
+          if [[ "$REGISTER_GITHUB_REPO" == "true" ]]; then
+            export GITHUB_REPO="$GITHUB_REPOSITORY"
+          fi
+          bash scripts/apply-sre-config.sh --with-app-telemetry
+
+      - name: Verify deployed agent
+        if: github.event_name == 'push' || inputs.action == 'apply'
+        env:
+          RG: ${{ vars.SRE_AGENT_RESOURCE_GROUP }}
+          AGENT_NAME: ${{ vars.SRE_AGENT_NAME }}
+        run: |
+          state="$(az resource show \
+            --resource-group "$RG" \
+            --resource-type Microsoft.App/agents \
+            --name "$AGENT_NAME" \
+            --api-version 2025-05-01-preview \
+            --query properties.provisioningState -o tsv)"
+          [[ "$state" == "Succeeded" ]]
+          endpoint="$(terraform -chdir="$TERRAFORM_DIRECTORY" output -raw sre_agent_endpoint)"
+          token="$(az account get-access-token --resource https://azuresre.dev --query accessToken -o tsv)"
+          curl --fail --silent --show-error \
+            -H "Authorization: Bearer $token" \
+            "$endpoint/api/v1/threads" >/dev/null
+
+      - name: Encrypt Terraform state
+        if: always() && hashFiles('infra/terraform/sre-agent/terraform.tfstate') != ''
+        env:
+          TF_STATE_ENCRYPTION_KEY: ${{ secrets.TF_STATE_ENCRYPTION_KEY }}
+        run: |
+          mkdir -p .terraform-state
+          openssl enc -aes-256-cbc -salt -pbkdf2 \
+            -in "$TERRAFORM_DIRECTORY/terraform.tfstate" \
+            -out .terraform-state/sre-agent.tfstate.enc \
+            -pass env:TF_STATE_ENCRYPTION_KEY
+
+      - name: Save encrypted Terraform state
+        if: always() && hashFiles('.terraform-state/sre-agent.tfstate.enc') != ''
+        uses: actions/cache/save@v4
+        with:
+          path: .terraform-state/sre-agent.tfstate.enc
+          key: sre-agent-state-${{ github.run_id }}-${{ github.run_attempt }}

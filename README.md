@@ -2,7 +2,23 @@
 
 A copy-paste starter kit for the [**Azure SRE Agent**](https://aka.ms/sreagent).
 
-Today there is **no first-party way to deploy an Azure SRE Agent's subagents, prompts, or runbooks as code**. The agent and its extensions are configured in the portal at https://sre.azure.com. This repo gives you everything you need to do that configuration in minutes instead of days, by sharing the YAML, prompts, and runbooks we use in production-style demos.
+This repository includes Terraform and GitHub Actions automation for deploying
+the Azure SRE Agent and its monitoring backend, plus configuration automation
+for knowledge, supported subagents, telemetry connectors, and optional GitHub
+Code Access. See [`docs/auto-deploy.md`](docs/auto-deploy.md).
+
+## Automated deployment
+
+```bash
+az login
+gh auth login
+bash scripts/bootstrap-auto-deploy.sh
+git push origin main
+```
+
+The bootstrap configures GitHub Actions OIDC and the protected `production`
+environment. Pushes that change Terraform, runbooks, subagents, or the
+configuration script automatically reconcile the SRE Agent.
 
 ## Backend setup — telemetry & policy (do this first)
 
@@ -44,6 +60,8 @@ Recommended order: **policy first** (so newly created resources are wired automa
 
 ### [`scripts/`](scripts/) — helpers (bash) for repeatable config
 
+- [`bootstrap-auto-deploy.sh`](scripts/bootstrap-auto-deploy.sh) — create the GitHub Actions OIDC identity and protected deployment environment
+- [`import-existing-sre-agent.sh`](scripts/import-existing-sre-agent.sh) — safely adopt an existing deployment when no encrypted workflow state exists
 - [`apply-sre-config.sh`](scripts/apply-sre-config.sh) — index the knowledge base, register your IaC repo as a CodeRepo, grant the agent's UAMI Reader / Monitoring Reader / LAW Reader on `RG`, and (optionally) wire Application Insights + Log Analytics connectors
 - [`register-github-repo.sh`](scripts/register-github-repo.sh) — register a single GitHub repo as a CodeRepo (after you've signed into GitHub at https://sre.azure.com once)
 - [`check-sre-agent.sh`](scripts/check-sre-agent.sh) — health probe: endpoint, KG state, subagent count, UAMI RBAC, required GitHub secrets
@@ -52,6 +70,7 @@ Recommended order: **policy first** (so newly created resources are wired automa
 
 ### [`docs/`](docs/)
 
+- [`auto-deploy.md`](docs/auto-deploy.md) — Terraform + GitHub Actions automated deployment and operations
 - [`subagent-paste-cheatsheet.md`](docs/subagent-paste-cheatsheet.md) — ⭐ the 10-min portal walkthrough; one block per subagent ready to paste
 - [`applying-subagents-via-portal.md`](docs/applying-subagents-via-portal.md) — deeper guide on Agent Canvas mechanics
 - [`agent-design.md`](docs/agent-design.md) — why a single triage agent (not a council), and how it's wired

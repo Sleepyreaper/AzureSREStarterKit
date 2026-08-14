@@ -36,6 +36,7 @@ AGENT_NAME="${AGENT_NAME:-}"
 GITHUB_REPO="${GITHUB_REPO:-}"
 APP_INSIGHTS_ID="${APP_INSIGHTS_ID:-}"
 LOG_ANALYTICS_ID="${LOG_ANALYTICS_ID:-}"
+SRE_AGENT_GITHUB_PAT="${SRE_AGENT_GITHUB_PAT:-}"
 API_VERSION="2025-05-01-preview"
 
 # Refuse to run if required vars are missing or still placeholders.
@@ -246,6 +247,22 @@ if [ -n "$GITHUB_REPO" ] || [ -n "$REPO_ONLY" ]; then
     echo
     echo "─── Step 3: Register repo as a CodeRepo ────────────────────"
     DATA_TOKEN="${DATA_TOKEN:-$(az account get-access-token --resource https://azuresre.dev --query accessToken -o tsv)}"
+
+    if [ -n "$SRE_AGENT_GITHUB_PAT" ]; then
+      echo -n "  ↳ Configuring github.com PAT authentication ... "
+      AUTH_STATUS=$(curl -sS -o /tmp/sre-agent-github-auth.json -w "%{http_code}" \
+        -X PUT "${AGENT_ENDPOINT}/api/v2/github/domains/github.com" \
+        -H "Authorization: Bearer ${DATA_TOKEN}" \
+        -H "Content-Type: application/json" \
+        -d "{\"authType\":\"Pat\",\"pat\":\"${SRE_AGENT_GITHUB_PAT}\"}")
+      if [[ "$AUTH_STATUS" =~ ^2 ]]; then
+        echo "ok"
+      else
+        echo "FAILED (HTTP ${AUTH_STATUS})"
+        python3 -c 'import json; print(json.load(open("/tmp/sre-agent-github-auth.json")))' 2>/dev/null || true
+      fi
+      rm -f /tmp/sre-agent-github-auth.json
+    fi
 
     if az rest --method GET \
          --url "https://management.azure.com${AGENT_RESOURCE_ID}/DataConnectors/github?api-version=${API_VERSION}" \
