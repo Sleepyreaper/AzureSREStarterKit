@@ -30,8 +30,8 @@ The bootstrap creates:
   `production` environment;
 - Contributor and Role Based Access Control Administrator assignments limited
   to `rg-sre-agent-demo`;
-- GitHub environment variables and a generated Terraform state encryption
-  secret.
+- non-sensitive GitHub environment variables, protected Azure identity secrets,
+  and a generated Terraform state encryption secret.
 
 Override defaults with environment variables:
 

@@ -91,11 +91,16 @@ set_environment_variable() {
   gh variable set "$1" --env "$GH_ENVIRONMENT" --repo "$GH_REPO" --body "$2"
 }
 
-set_environment_variable AZURE_CLIENT_ID "$CLIENT_ID"
-set_environment_variable AZURE_DEPLOYMENT_PRINCIPAL_OBJECT_ID "$PRINCIPAL_ID"
-set_environment_variable AZURE_SUBSCRIPTION_ID "$SUBSCRIPTION_ID"
-set_environment_variable AZURE_TENANT_ID "$TENANT_ID"
-set_environment_variable SRE_AGENT_ADMINISTRATOR_PRINCIPAL_IDS "[\"${CURRENT_PRINCIPAL_ID}\"]"
+set_environment_secret() {
+  gh secret set "$1" --env "$GH_ENVIRONMENT" --repo "$GH_REPO" --body "$2"
+  gh variable delete "$1" --env "$GH_ENVIRONMENT" --repo "$GH_REPO" >/dev/null 2>&1 || true
+}
+
+set_environment_secret AZURE_CLIENT_ID "$CLIENT_ID"
+set_environment_secret AZURE_DEPLOYMENT_PRINCIPAL_OBJECT_ID "$PRINCIPAL_ID"
+set_environment_secret AZURE_SUBSCRIPTION_ID "$SUBSCRIPTION_ID"
+set_environment_secret AZURE_TENANT_ID "$TENANT_ID"
+set_environment_secret SRE_AGENT_ADMINISTRATOR_PRINCIPAL_IDS "[\"${CURRENT_PRINCIPAL_ID}\"]"
 set_environment_variable SRE_AGENT_LOCATION "$LOCATION"
 set_environment_variable SRE_AGENT_MONTHLY_UNIT_LIMIT "$MONTHLY_AGENT_UNIT_LIMIT"
 set_environment_variable SRE_AGENT_NAME "$AGENT_NAME"
